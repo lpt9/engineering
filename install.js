@@ -66,7 +66,7 @@ function findBmadRoot() {
 function runInteractive(cmd, args, opts = {}) {
   return new Promise((resolve) => {
     log(`\n  ${C.D}$ ${cmd} ${args.join(' ')}${C.R}\n`);
-    const child = spawn(cmd, args, { stdio: 'inherit', ...opts });
+    const child = spawn(cmd, args, { stdio: 'inherit', shell: true, ...opts });
     child.on('close', (code) => {
       if (code === 0) {
         log(`  ${C.G}✓${C.R} 完成\n`);

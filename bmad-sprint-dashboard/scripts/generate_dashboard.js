@@ -375,16 +375,15 @@ body {
 /* ===================== Phase Timeline ===================== */
 .phase-timeline {
   background: var(--color-surface);
-  margin: 0 32px; border-radius: var(--radius-lg);
-  padding: 20px 24px; margin-top: -16px;
+  margin: 0 32px 20px; border-radius: var(--radius-lg);
+  padding: 16px 20px; margin-top: -16px;
   position: relative; z-index: 3;
   box-shadow: var(--shadow-lg);
-  overflow-x: auto;
 }
-.phase-timeline .phases { display: flex; gap: 0; align-items: flex-start; min-width: max-content; }
+.phase-timeline .phases { display: flex; gap: 0; align-items: flex-start; }
 .phase-item {
-  flex: 1; min-width: 140px; text-align: center; cursor: pointer;
-  position: relative; padding: 12px 16px 16px;
+  flex: 1; min-width: 108px; text-align: center; cursor: pointer;
+  position: relative; padding: 10px 12px 14px;
   transition: all 0.2s;
 }
 .phase-item:not(:last-child)::after {
@@ -545,12 +544,14 @@ body {
 
 /* ===================== Responsive ===================== */
 @media (max-width: 1024px) {
-  .header,.progress-section,.main-content { margin-left:16px; margin-right:16px; padding-left:16px; padding-right:16px }
+  .header,.phase-timeline,.progress-section,.main-content { margin-left:16px; margin-right:16px; padding-left:16px; padding-right:16px }
   .epic-desc { display: none }
   .stat-card { padding: 14px 12px; gap: 8px }
   .stat-icon { width: 36px; height: 36px; font-size: 16px }
   .stat-info .stat-num { font-size: 18px }
   .stat-info .stat-label { font-size: 11px }
+  .phase-item { min-width: 80px; padding: 8px 6px 10px }
+  .phase-desc { display: none }
 }
 @media (max-width: 640px) {
   .stats-row { padding: 16px 12px 0; gap: 8px }
@@ -558,6 +559,8 @@ body {
   .stat-icon { width: 30px; height: 30px; font-size: 14px }
   .stat-info .stat-num { font-size: 16px }
   .stat-info .stat-label { font-size: 10px }
+  .phase-item { min-width: 58px; padding: 6px 3px 8px; font-size: 11px }
+  .phase-name { font-size: 10px }
 }
 </style>
 </head>

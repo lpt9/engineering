@@ -1,0 +1,31 @@
+{
+  "name": "bmad-sprint-dashboard",
+  "version": "1.0.0",
+  "description": "BMAD-METHOD Sprint 开发进度仪表盘 Skill — 从 sprint-status.yaml + epics.md 自动生成可视化进度页面",
+  "main": "install.js",
+  "bin": {
+    "bmad-sprint-dashboard": "./install.js"
+  },
+  "files": [
+    "install.js",
+    "bmad-sprint-dashboard/"
+  ],
+  "keywords": [
+    "bmad",
+    "bmad-method",
+    "sprint",
+    "dashboard",
+    "agile",
+    "codebuddy",
+    "skill"
+  ],
+  "author": "liupengtao",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lpt9/engineering.git"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

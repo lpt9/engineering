@@ -266,21 +266,24 @@ function detectPhases(outputDir) {
       id: 'analysis',
       name: '需求分析',
       icon: '🔍',
-      desc: 'PRD / 产品简报 / 头脑风暴',
+      desc: 'PRD / 产品简报',
+      detail: '产品需求文档、头脑风暴、市场调研',
       done: hasDir('planning-artifacts/prds') || hasFile('planning-artifacts/prd.md'),
     },
     {
       id: 'architecture',
       name: '架构设计',
       icon: '🏗️',
-      desc: '架构文档 / UX 设计',
+      desc: '架构文档 / UX',
+      detail: '系统架构决策、技术选型、UX/UI 设计',
       done: hasFile('planning-artifacts/architecture.md'),
     },
     {
       id: 'planning',
       name: '开发规划',
       icon: '📋',
-      desc: 'Epics 分解 / Sprint 规划',
+      desc: 'Epics / Sprint',
+      detail: 'Epic 分解、Story 编写、Sprint 规划',
       done: hasFile('planning-artifacts/epics.md') && hasFile('implementation-artifacts/sprint-status.yaml'),
       partial: hasFile('planning-artifacts/epics.md'),
     },
@@ -288,15 +291,25 @@ function detectPhases(outputDir) {
       id: 'development',
       name: '开发执行',
       icon: '🚀',
-      desc: 'Story 开发 / 代码审查',
-      done: false, // 由 sprint-status 数据决定
+      desc: '0/0 Story',
+      detail: 'Story 实现、编码、单元测试',
+      done: false,
       isCurrent: true,
+    },
+    {
+      id: 'testing',
+      name: '测试验收',
+      icon: '🧪',
+      desc: 'Code Review',
+      detail: '代码审查、集成测试、验收测试',
+      done: false,
     },
     {
       id: 'retro',
       name: '回顾总结',
       icon: '🎯',
-      desc: 'Epic Retrospective',
+      desc: 'Retrospective',
+      detail: 'Epic 回顾、经验总结、改进计划',
       done: false,
     },
   ];
@@ -409,6 +422,26 @@ body {
 .phase-item.done .phase-name { color: var(--color-success) }
 .phase-item.current .phase-name { color: var(--color-primary) }
 .phase-desc { font-size: 10px; color: #94A3B8; line-height: 1.3 }
+
+/* Phase detail panel */
+.phase-detail-panel {
+  display: none; background: var(--color-surface);
+  margin: 0 32px 20px; border-radius: var(--radius-lg);
+  padding: 20px 24px; box-shadow: var(--shadow-card);
+  border-top: 3px solid var(--color-primary);
+}
+.phase-detail-panel.active { display: block; animation: fadeIn 0.2s }
+@keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+.phase-detail-header { font-size: 16px; font-weight: 700; margin-bottom: 8px }
+.phase-detail-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.6 }
+.phase-detail-artifact { 
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; background: #F1F5F9; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 11px; color: var(--color-text-secondary);
+  margin: 4px 6px 4px 0;
+}
+.phase-detail-artifact.found { background: var(--color-success-light); color: #065F46 }
+.phase-detail-artifact.missing { background: #F1F5F9; color: #94A3B8; text-decoration: line-through }
 
 /* ===================== Progress Bar ===================== */
 .progress-section {
@@ -575,6 +608,12 @@ body {
   <div class="phases" id="phaseList"></div>
 </div>
 
+<div class="phase-detail-panel" id="phaseDetail">
+  <div class="phase-detail-header" id="phaseDetailHeader"></div>
+  <div class="phase-detail-text" id="phaseDetailText"></div>
+  <div id="phaseDetailFiles"></div>
+</div>
+
 <div class="progress-section fade-in">
   <div class="label-row">
     <span class="label">整体完成度</span>
@@ -621,7 +660,62 @@ const PHASES = ${phasesJSON};
   list.innerHTML = html;
 })();
 
+// Phase data for detail panel
+const PHASE_FILES = {
+  analysis: [
+    { file: 'planning-artifacts/prds/', label: 'PRD 文档', check: 'dir' },
+    { file: 'planning-artifacts/prd.md', label: 'PRD.md', check: 'file' },
+  ],
+  architecture: [
+    { file: 'planning-artifacts/architecture.md', label: '架构文档', check: 'file' },
+    { file: 'planning-artifacts/ux-designs/', label: 'UX 设计', check: 'dir' },
+  ],
+  planning: [
+    { file: 'planning-artifacts/epics.md', label: 'Epics 分解', check: 'file' },
+    { file: 'implementation-artifacts/sprint-status.yaml', label: 'Sprint 状态', check: 'file' },
+  ],
+  development: [
+    { file: 'implementation-artifacts/', label: 'Story 实现文件', check: 'dir' },
+  ],
+  testing: [
+    { file: 'implementation-artifacts/sprint-status.yaml', label: '审查状态', check: 'file' },
+  ],
+  retro: [
+    { file: 'implementation-artifacts/', label: '回顾记录', check: 'dir' },
+  ],
+};
+
 function scrollToPhase(phaseId) {
+  // Highlight active phase item
+  document.querySelectorAll('.phase-item').forEach(function(el) { el.classList.remove('current'); });
+  var item = document.querySelector('[data-phase="' + phaseId + '"]');
+  if (item) item.classList.add('current');
+
+  // Show detail panel
+  var phase = PHASES.find(function(p) { return p.id === phaseId; });
+  if (!phase) return;
+
+  document.getElementById('phaseDetailHeader').textContent = phase.icon + ' ' + phase.name + ' — ' + (phase.done ? '✅ 已完成' : (phase.partial ? '◐ 进行中' : (phase.isCurrent ? '▶ 当前阶段' : '○ 待开始')));
+  document.getElementById('phaseDetailText').textContent = phase.detail || '';
+
+  // Show artifact files status
+  var filesHTML = '';
+  var flist = PHASE_FILES[phaseId] || [];
+  flist.forEach(function(f) {
+    var exists = false;
+    // Can't check real files in browser, use phase status
+    if (phase.done) exists = true;
+    else if (phase.partial) exists = (f.check !== 'dir'); // partial means some files exist
+    filesHTML += '<span class="phase-detail-artifact ' + (exists ? 'found' : 'missing') + '">' +
+      (exists ? '📄' : '📂') + ' ' + f.label +
+      '</span>';
+  });
+  document.getElementById('phaseDetailFiles').innerHTML = '<div style="margin-top:10px">' + filesHTML + '</div>';
+
+  var panel = document.getElementById('phaseDetail');
+  panel.classList.add('active');
+
+  // For development phase, also scroll to epic grid
   if (phaseId === 'development') {
     document.getElementById('epicGrid').scrollIntoView({ behavior: 'smooth' });
   }
@@ -841,19 +935,29 @@ function main() {
 
   // 3.5 检测 BMAD 各阶段
   const phases = detectPhases(outputDir);
-  // 根据 sprint 数据更新开发阶段和回顾阶段状态
+  // 根据 sprint 数据更新各阶段状态
   const devPhase = phases.find(p => p.id === 'development');
   if (devPhase) {
     if (doneS === totalS && totalS > 0) devPhase.done = true;
     else if (doneS > 0) devPhase.partial = true;
-    devPhase.desc = `${doneS}/${totalS} Story 完成`;
+    devPhase.desc = `${doneS}/${totalS} 完成`;
+    devPhase.detail = `${doneS} 个 Story 已完成，${reviewS} 个待审查`;
   }
-  const retroPhase = phases.find(p => p.id === 'retro');
-  if (retroPhase && devPhase && devPhase.done) {
-    // 检查是否有 retrospective 完成标记
-    if (statusData.status && Object.values(statusData.status).some(v => v === 'done' && Object.keys(statusData.status).some(k => k.includes('retrospective')))) {
-      retroPhase.done = true;
+  // 测试验收阶段：有 story 处于 review 或部分 done
+  const testPhase = phases.find(p => p.id === 'testing');
+  if (testPhase) {
+    if (reviewS > 0) {
+      testPhase.partial = true;
+      testPhase.desc = `${reviewS} 个待审`;
+      testPhase.detail = `${reviewS} 个 Story 等待 Code Review，${doneS} 个已通过`;
     }
+    if (doneS > 0 && reviewS === 0 && totalS === doneS) testPhase.isCurrent = true;
+    if (doneS === totalS && totalS > 0) { testPhase.done = true; testPhase.desc = '全部通过'; }
+  }
+  // 回顾总结
+  const retroPhase = phases.find(p => p.id === 'retro');
+  if (retroPhase && doneS === totalS && totalS > 0) {
+    retroPhase.isCurrent = true;
   }
 
   // 4. 生成 HTML

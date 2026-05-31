@@ -66,7 +66,6 @@ function readOutputDir(projectRoot) {
 
 function parseSprintStatus(yamlPath) {
   if (!fs.existsSync(yamlPath)) {
-    console.error(`[ERROR] sprint-status.yaml 未找到: ${yamlPath}`);
     return null;
   }
 
@@ -653,8 +652,23 @@ function main() {
   console.log('\n[1/4] 解析 sprint-status.yaml ...');
   const statusData = parseSprintStatus(sprintStatusPath);
   if (!statusData) {
-    console.error('无法解析 sprint-status.yaml，退出。');
-    process.exit(1);
+    console.log(`       ${'⚠ '.trim()} sprint-status.yaml 不存在`);
+    console.log('');
+    console.log('  ╔═══════════════════════════════════════════════════════════╗');
+    console.log('  ║  📋 仪表盘数据尚未就绪                                   ║');
+    console.log('  ║                                                         ║');
+    console.log('  ║  BMAD-METHOD 已安装，但还没有 Sprint 数据。              ║');
+    console.log('  ║  请先完成以下 BMAD 工作流来生成数据:                     ║');
+    console.log('  ║                                                         ║');
+    console.log('  ║  1. 创建 PRD           → bmad-create-prd                 ║');
+    console.log('  ║  2. 创建架构            → bmad-create-architecture         ║');
+    console.log('  ║  3. 创建 Epics & Stories → bmad-create-epics-and-stories  ║');
+    console.log('  ║  4. Sprint 规划         → bmad-sprint-planning           ║');
+    console.log('  ║                                                         ║');
+    console.log('  ║  完成后重新运行: node _bmad/scripts/generate_sprint_dashboard.js');
+    console.log('  ╚═══════════════════════════════════════════════════════════╝');
+    console.log('');
+    process.exit(0);
   }
   console.log(`       找到 ${Object.keys(statusData.status).length} 个状态条目`);
   console.log(`       最后更新: ${statusData.meta.last_updated}`);
@@ -663,8 +677,18 @@ function main() {
   console.log('\n[2/4] 解析 epics.md ...');
   const epics = parseEpics(epicsPath);
   if (epics.length === 0) {
-    console.error('无法解析 epics.md 或未找到 Epic，退出。');
-    process.exit(1);
+    console.log(`       ${'⚠'.trim()} epics.md 不存在或无 Epic 数据`);
+    console.log('');
+    console.log('  ╔═══════════════════════════════════════════════════════════╗');
+    console.log('  ║  📋 Epic 数据尚未就绪                                   ║');
+    console.log('  ║                                                         ║');
+    console.log('  ║  请先运行: bmad-create-epics-and-stories                 ║');
+    console.log('  ║  然后运行: bmad-sprint-planning                         ║');
+    console.log('  ║                                                         ║');
+    console.log('  ║  完成后重新运行: node _bmad/scripts/generate_sprint_dashboard.js');
+    console.log('  ╚═══════════════════════════════════════════════════════════╝');
+    console.log('');
+    process.exit(0);
   }
   epics.forEach(e => {
     console.log(`       Epic ${e.num}: ${e.name} (${e.stories.length} 个 Story)`);

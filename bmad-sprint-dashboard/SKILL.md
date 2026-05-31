@@ -22,6 +22,42 @@ description: >
 
 此 Skill 将这些数据整合为一个美观的可视化 HTML 仪表盘，方便随时查看整体开发进度。
 
+## 安装
+
+### 已有 BMAD-METHOD 的项目（推荐）
+
+进入项目目录，运行以下命令即可安装 Skill 并自动部署到当前项目：
+
+```bash
+npx github:lpt9/engineering
+```
+
+**自动完成：**
+1. 安装 Skill 到全局 (`~/.codebuddy/skills/`)
+2. 自动检测当前目录是否为 BMAD 项目（通过 `_bmad/config.toml`）
+3. 如果是，自动部署生成脚本到项目 `_bmad/scripts/`
+4. 自动生成首版仪表盘 HTML
+
+### 部署到指定项目
+
+```bash
+npx github:lpt9/engineering --deploy /path/to/your-project
+```
+
+### 新项目（需要同时安装 BMAD-METHOD）
+
+```bash
+npx github:lpt9/engineering --init
+```
+
+会自动依次完成：安装 BMAD-METHOD → 安装 Skill → 部署脚本 → 生成仪表盘。
+
+### 卸载
+
+```bash
+npx github:lpt9/engineering --uninstall
+```
+
 ## 使用场景
 
 - 项目开始时，生成初始仪表盘了解 Sprint 规划
@@ -32,15 +68,21 @@ description: >
 
 ## 执行方式
 
-### 直接运行 Skill 内置脚本
+### 方式一：对 CodeBuddy 说（推荐）
+
+在 BMAD-METHOD 项目目录下，直接说：
+
+> **"刷新仪表盘"**
+
+CodeBuddy 将自动运行 Skill 内置脚本生成最新仪表盘。
+
+### 方式二：直接运行 Skill 内置脚本
 
 ```bash
-node $HOME/.codebuddy/skills/bmad-sprint-dashboard/scripts/generate_dashboard.js
-```
+# macOS / Linux
+node "$HOME/.codebuddy/skills/bmad-sprint-dashboard/scripts/generate_dashboard.js"
 
-或在 Windows PowerShell 中：
-
-```bash
+# Windows PowerShell
 node "$env:USERPROFILE\.codebuddy\skills\bmad-sprint-dashboard\scripts\generate_dashboard.js"
 ```
 
@@ -50,6 +92,12 @@ node "$env:USERPROFILE\.codebuddy\skills\bmad-sprint-dashboard\scripts\generate_
 3. 解析 `sprint-status.yaml` 获取所有状态数据
 4. 解析 `epics.md` 获取 Epic/Story 名称和摘要
 5. 合并数据并生成 `sprint-dashboard.html`
+
+### 方式三：通过项目部署的脚本
+
+```bash
+node _bmad/scripts/generate_sprint_dashboard.js
+```
 
 ### 指定自定义输出路径
 
@@ -64,6 +112,8 @@ node scripts/generate_dashboard.js --output path/to/custom-dashboard.html
 3. 仪表盘支持：
    - 整体完成度进度条
    - 按状态分类的统计卡片（已完成/待审查/进行中/待开始）
+   - BMAD 全生命周期时间线（需求分析 → 架构设计 → 开发规划 → 开发执行 → 测试验收 → 回顾总结）
+   - 各阶段产出物点击查看
    - 各 Epic 展开/折叠卡片，显示所有 Story 状态
    - 当前活跃 Epic 高亮显示
    - 响应式设计，支持移动端查看

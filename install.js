@@ -5,12 +5,12 @@
  *
  * 三种模式:
  *   npx github:lpt9/engineering                    → 仅安装 Skill 到全局
- *   npx github:lpt9/engineering --init             → 完整初始化: BMAD-METHOD + Skill + 生成仪表盘
+ *   npx github:lpt9/engineering --init             → 交互式安装 BMAD → 完成后自动安装 Skill + 生成仪表盘
  *   npx github:lpt9/engineering --uninstall        → 卸载 Skill
  *
  * --init 流程:
- *   ① 安装 BMAD-METHOD (npx bmad-method install)
- *   ② 安装 sprint-dashboard Skill 到 ~/.codebuddy/skills/
+ *   ① 交互式安装 BMAD-METHOD (保留原生交互体验，用户回答问题、配置等)
+ *   ② BMAD 安装完成后，自动安装 sprint-dashboard Skill 到 ~/.codebuddy/skills/
  *   ③ 拷贝生成脚本到项目 _bmad/scripts/
  *   ④ 自动生成首版 sprint-dashboard.html
  */
@@ -18,7 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const SKILL_NAME = 'bmad-sprint-dashboard';
 const SKILL_SRC = path.join(__dirname, SKILL_NAME);
@@ -59,15 +59,28 @@ function findBmadRoot() {
   return null;
 }
 
-/** 执行命令并实时输出（交互式场景用 spawnSync） */
-function run(cmd, args, opts = {}) {
-  log(`  ${C.D}$ ${cmd} ${args.join(' ')}${C.R}`);
-  const r = spawnSync(cmd, args, { stdio: 'inherit', shell: true, ...opts });
-  if (r.error || r.status !== 0) {
-    log(`  ${C.r}✗${C.R} 命令失败 (exit ${r.status || r.error?.message})`);
-    return false;
-  }
-  return true;
+/**
+ * 异步执行命令，继承父进程 stdio（保留完整终端交互能力）
+ * 返回 Promise，resolve(true) 成功，resolve(false) 失败
+ */
+function runInteractive(cmd, args, opts = {}) {
+  return new Promise((resolve) => {
+    log(`\n  ${C.D}$ ${cmd} ${args.join(' ')}${C.R}\n`);
+    const child = spawn(cmd, args, { stdio: 'inherit', ...opts });
+    child.on('close', (code) => {
+      if (code === 0) {
+        log(`  ${C.G}✓${C.R} 完成\n`);
+        resolve(true);
+      } else {
+        log(`\n  ${C.r}✗${C.R} 退出码: ${code}\n`);
+        resolve(false);
+      }
+    });
+    child.on('error', (err) => {
+      log(`\n  ${C.r}✗${C.R} ${err.message}\n`);
+      resolve(false);
+    });
+  });
 }
 
 // ── 卸载 ─────────────────────────────────────
@@ -117,30 +130,39 @@ async function doInit() {
   log(`  工作目录: ${cwd}`);
   sep();
 
-  // ── ① 安装 BMAD-METHOD ──────────────────────
-  step(1, '安装 BMAD-METHOD');
+  // ── ① 交互式安装 BMAD-METHOD ──────────────
   const bmadRoot = findBmadRoot();
   if (bmadRoot) {
-    log(`  ${C.G}✓${C.R} BMAD-METHOD 已安装: ${bmadRoot}`);
+    log(`\n${C.G}${I.G}${C.R} BMAD-METHOD 已安装: ${bmadRoot}`);
+    log(`  跳过 BMAD 安装，直接进入 Skill 部署...`);
   } else {
-    log(`  ${C.Y}⚠${C.R} 未检测到 BMAD-METHOD，开始安装...\n`);
-    const ok = run('npx', ['bmad-method', 'install'], { cwd });
+    log(`\n${C.B}${C.Y}[1/3]${C.R} ${C.B}安装 BMAD-METHOD${C.R}`);
+    log(`${C.D}───────────────────────────────────────────────${C.R}`);
+    log(`${C.C}  接下来将进入 BMAD-METHOD 原生安装流程。${C.R}`);
+    log(`${C.C}  请按提示完成交互（回答问题、选择配置等）。${C.R}`);
+    log(`${C.C}  安装完成后，脚本会自动继续部署 Skill 和仪表盘。${C.R}`);
+    log(`${C.D}───────────────────────────────────────────────${C.R}`);
+
+    const ok = await runInteractive('npx', ['bmad-method', 'install'], { cwd });
     if (!ok) {
-      log(`\n${C.r}✗ BMAD-METHOD 安装失败，请手动执行: npx bmad-method install${C.R}`);
+      log(`\n${C.r}✗ BMAD-METHOD 安装未成功完成${C.R}`);
+      log(`${C.Y}  提示: 可手动执行 npx bmad-method install 后，再运行本脚本${C.R}`);
       process.exit(1);
     }
   }
 
-  // ── ② 安装 Skill 到全局 ─────────────────────
-  step(2, `安装 ${SKILL_NAME} Skill 到全局`);
+  // ── ② BMAD 完成后，安装 Skill + 部署 + 生成仪表盘 ──
+  log(`\n${C.B}${C.Y}[2/3]${C.R} ${C.B}部署 sprint-dashboard Skill${C.R}`);
+  log(`${C.D}───────────────────────────────────────────────${C.R}`);
+
+  // 安装 Skill 到全局
   const skillOk = doInstallSkill();
   if (!skillOk) {
     log(`\n${C.r}✗ Skill 安装失败${C.R}`);
     process.exit(1);
   }
 
-  // ── ③ 拷贝生成脚本到项目 ────────────────────
-  step(3, '部署生成脚本到项目');
+  // 拷贝生成脚本到项目
   const root = findBmadRoot() || cwd;
   const projectScriptDir = path.join(root, '_bmad', 'scripts');
   const projectScript = path.join(projectScriptDir, 'generate_sprint_dashboard.js');
@@ -152,15 +174,17 @@ async function doInit() {
   const srcScript = path.join(SKILL_DEST, 'scripts', 'generate_dashboard.js');
   if (fs.existsSync(srcScript)) {
     fs.copyFileSync(srcScript, projectScript);
-    log(`  ${C.G}✓${C.R} 已复制到: ${projectScript}`);
+    log(`  ${C.G}✓${C.R} 脚本已部署: ${projectScript}`);
   } else {
-    log(`  ${C.Y}⚠${C.R} 源脚本未找到，跳过`);
+    log(`  ${C.Y}⚠${C.R} 源脚本未找到`);
   }
 
-  // ── ④ 生成首版仪表盘 ────────────────────────
-  step(4, '生成 Sprint 进度仪表盘');
+  // ── ③ 生成仪表盘 ──────────────────────
+  log(`\n${C.B}${C.Y}[3/3]${C.R} ${C.B}生成 Sprint 进度仪表盘${C.R}`);
+  log(`${C.D}───────────────────────────────────────────────${C.R}`);
+
   if (fs.existsSync(projectScript)) {
-    const ok = run('node', [projectScript], { cwd: root });
+    const ok = await runInteractive('node', [projectScript], { cwd: root });
     if (ok) {
       const htmlPath = path.join(root, '_bmad-output', 'implementation-artifacts', 'sprint-dashboard.html');
       if (fs.existsSync(htmlPath)) {
@@ -169,8 +193,7 @@ async function doInit() {
       }
     }
   } else {
-    log(`  ${C.Y}⚠${C.R} 跳过 — 项目尚未配置 BMAD 输出文档`);
-    log(`  ${C.D}  完成 Epic/Story 规划后运行: node _bmad/scripts/generate_sprint_dashboard.js${C.R}`);
+    log(`  ${C.Y}⚠${C.R} 生成脚本未就绪，跳过`);
   }
 
   // ── 完成 ──────────────────────────────────

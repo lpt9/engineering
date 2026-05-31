@@ -609,7 +609,7 @@ const PHASES = ${phasesJSON};
     else if (p.partial) cls = 'partial';
     else if (p.isCurrent) cls = 'current';
     let icon = p.done ? '✓' : (p.partial ? '◐' : (p.isCurrent ? '▶' : (i + 1)));
-    html += '<div class="phase-item ' + cls + '" data-phase="' + p.id + '" onclick="scrollToPhase(\'' + p.id + '\')">' +
+    html += '<div class="phase-item ' + cls + '" data-phase="' + p.id + '" onclick="scrollToPhase(this.dataset.phase)">' +
       '<div class="phase-dot">' + icon + '</div>' +
       '<div class="phase-name">' + p.icon + ' ' + p.name + '</div>' +
       '<div class="phase-desc">' + p.desc + '</div>' +

@@ -1,13 +1,15 @@
 {
   "name": "bmad-sprint-dashboard",
   "version": "1.0.0",
-  "description": "BMAD-METHOD Sprint 开发进度仪表盘 Skill — 从 sprint-status.yaml + epics.md 自动生成可视化进度页面",
+  "description": "BMAD-METHOD Sprint 仪表盘 Skill — 一键安装 BMAD + Skill + 生成可视化进度页面",
   "main": "install.js",
   "bin": {
     "bmad-sprint-dashboard": "./install.js"
   },
   "files": [
     "install.js",
+    "package.json",
+    "README.md",
     "bmad-sprint-dashboard/"
   ],
   "keywords": [

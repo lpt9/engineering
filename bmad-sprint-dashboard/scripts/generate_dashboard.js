@@ -443,6 +443,12 @@ body {
 .phase-detail-artifact.found { background: var(--color-success-light); color: #065F46 }
 .phase-detail-artifact.missing { background: #F1F5F9; color: #94A3B8; text-decoration: line-through }
 
+/* Phase view toggle */
+.phase-view { display: none; }
+.phase-view.active { display: block; animation: fadeIn 0.25s }
+#phaseEmpty { display: none; text-align: center; padding: 40px; color: #94A3B8 }
+#phaseEmpty.active { display: block }
+
 /* ===================== Progress Bar ===================== */
 .progress-section {
   background: var(--color-surface);
@@ -608,12 +614,15 @@ body {
   <div class="phases" id="phaseList"></div>
 </div>
 
-<div class="phase-detail-panel" id="phaseDetail">
-  <div class="phase-detail-header" id="phaseDetailHeader"></div>
-  <div class="phase-detail-text" id="phaseDetailText"></div>
-  <div id="phaseDetailFiles"></div>
+<!-- 阶段详情面板：点击非开发阶段时展示 -->
+<div class="phase-detail-panel" id="phaseInfo" style="display:none">
+  <div class="phase-detail-header" id="phaseInfoHeader"></div>
+  <div class="phase-detail-text" id="phaseInfoText"></div>
+  <div id="phaseInfoFiles"></div>
 </div>
 
+<!-- 开发执行阶段视图（默认显示） -->
+<div id="devContent" class="phase-view active">
 <div class="progress-section fade-in">
   <div class="label-row">
     <span class="label">整体完成度</span>
@@ -626,6 +635,14 @@ body {
 
 <div class="main-content">
   <div class="epic-grid" id="epicGrid"></div>
+</div>
+</div><!-- /devContent -->
+
+<!-- 其他阶段的占位视图 -->
+<div id="phaseEmpty" class="phase-view" style="text-align:center;padding:40px;color:#94A3B8">
+  <div style="font-size:48px;margin-bottom:12px" id="phaseEmptyIcon">📋</div>
+  <div style="font-size:16px;font-weight:600;margin-bottom:4px" id="phaseEmptyTitle"></div>
+  <div style="font-size:13px" id="phaseEmptyDesc"></div>
 </div>
 
 <div class="footer">
@@ -691,33 +708,39 @@ function scrollToPhase(phaseId) {
   var item = document.querySelector('[data-phase="' + phaseId + '"]');
   if (item) item.classList.add('current');
 
-  // Show detail panel
   var phase = PHASES.find(function(p) { return p.id === phaseId; });
   if (!phase) return;
 
-  document.getElementById('phaseDetailHeader').textContent = phase.icon + ' ' + phase.name + ' — ' + (phase.done ? '✅ 已完成' : (phase.partial ? '◐ 进行中' : (phase.isCurrent ? '▶ 当前阶段' : '○ 待开始')));
-  document.getElementById('phaseDetailText').textContent = phase.detail || '';
+  // Hide all views
+  document.querySelectorAll('.phase-view').forEach(function(v) { v.classList.remove('active'); });
+  document.getElementById('phaseInfo').style.display = 'none';
+  document.getElementById('phaseEmpty').classList.remove('active');
 
-  // Show artifact files status
-  var filesHTML = '';
-  var flist = PHASE_FILES[phaseId] || [];
-  flist.forEach(function(f) {
-    var exists = false;
-    // Can't check real files in browser, use phase status
-    if (phase.done) exists = true;
-    else if (phase.partial) exists = (f.check !== 'dir'); // partial means some files exist
-    filesHTML += '<span class="phase-detail-artifact ' + (exists ? 'found' : 'missing') + '">' +
-      (exists ? '📄' : '📂') + ' ' + f.label +
-      '</span>';
-  });
-  document.getElementById('phaseDetailFiles').innerHTML = '<div style="margin-top:10px">' + filesHTML + '</div>';
-
-  var panel = document.getElementById('phaseDetail');
-  panel.classList.add('active');
-
-  // For development phase, also scroll to epic grid
   if (phaseId === 'development') {
-    document.getElementById('epicGrid').scrollIntoView({ behavior: 'smooth' });
+    // Show development content (progress + stats + epics)
+    document.getElementById('devContent').classList.add('active');
+  } else if (phase.done || phase.partial) {
+    // Show phase info panel with detail
+    document.getElementById('phaseInfoHeader').textContent = phase.icon + ' ' + phase.name + ' — ' + (phase.done ? '✅ 已完成' : '◐ 进行中');
+    document.getElementById('phaseInfoText').textContent = phase.detail || '';
+
+    var filesHTML = '';
+    var flist = PHASE_FILES[phaseId] || [];
+    flist.forEach(function(f) {
+      var exists = phase.done;
+      if (phase.partial) exists = (f.check !== 'dir');
+      filesHTML += '<span class="phase-detail-artifact ' + (exists ? 'found' : 'missing') + '">' +
+        (exists ? '📄' : '📂') + ' ' + f.label + '</span>';
+    });
+    document.getElementById('phaseInfoFiles').innerHTML = '<div style="margin-top:10px">📁 产出物: ' + filesHTML + '</div>';
+
+    document.getElementById('phaseInfo').style.display = 'block';
+  } else {
+    // Show empty state for pending phases
+    document.getElementById('phaseEmptyIcon').textContent = phase.icon;
+    document.getElementById('phaseEmptyTitle').textContent = phase.name + ' — 尚未开始';
+    document.getElementById('phaseEmptyDesc').textContent = '完成前置阶段后，此阶段将自动解锁';
+    document.getElementById('phaseEmpty').classList.add('active');
   }
 }
 

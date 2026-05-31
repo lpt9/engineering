@@ -251,11 +251,66 @@ function mergeData(epics, statusData) {
 }
 
 // ────────────────────────────────────────────────────────────
+// 4.5. 检测 BMAD 各阶段完成状态
+// ────────────────────────────────────────────────────────────
+
+function detectPhases(outputDir) {
+  const hasFile = (relativePath) => fs.existsSync(path.join(outputDir, relativePath));
+  const hasDir = (relativePath) => {
+    const d = path.join(outputDir, relativePath);
+    return fs.existsSync(d) && fs.readdirSync(d).length > 0;
+  };
+
+  const phases = [
+    {
+      id: 'analysis',
+      name: '需求分析',
+      icon: '🔍',
+      desc: 'PRD / 产品简报 / 头脑风暴',
+      done: hasDir('planning-artifacts/prds') || hasFile('planning-artifacts/prd.md'),
+    },
+    {
+      id: 'architecture',
+      name: '架构设计',
+      icon: '🏗️',
+      desc: '架构文档 / UX 设计',
+      done: hasFile('planning-artifacts/architecture.md'),
+    },
+    {
+      id: 'planning',
+      name: '开发规划',
+      icon: '📋',
+      desc: 'Epics 分解 / Sprint 规划',
+      done: hasFile('planning-artifacts/epics.md') && hasFile('implementation-artifacts/sprint-status.yaml'),
+      partial: hasFile('planning-artifacts/epics.md'),
+    },
+    {
+      id: 'development',
+      name: '开发执行',
+      icon: '🚀',
+      desc: 'Story 开发 / 代码审查',
+      done: false, // 由 sprint-status 数据决定
+      isCurrent: true,
+    },
+    {
+      id: 'retro',
+      name: '回顾总结',
+      icon: '🎯',
+      desc: 'Epic Retrospective',
+      done: false,
+    },
+  ];
+
+  return phases;
+}
+
+// ────────────────────────────────────────────────────────────
 // 5. 生成 HTML
 // ────────────────────────────────────────────────────────────
 
-function generateHTML(data, outputPath) {
+function generateHTML(data, phases, outputPath) {
   const dataJSON = JSON.stringify(data, null, 2);
+  const phasesJSON = JSON.stringify(phases, null, 2);
 
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -316,6 +371,45 @@ body {
 }
 .header h1 .icon { font-size: 24px }
 .header .subtitle { color: #94A3B8; font-size: 13px; }
+
+/* ===================== Phase Timeline ===================== */
+.phase-timeline {
+  background: var(--color-surface);
+  margin: 0 32px; border-radius: var(--radius-lg);
+  padding: 20px 24px; margin-top: -16px;
+  position: relative; z-index: 3;
+  box-shadow: var(--shadow-lg);
+  overflow-x: auto;
+}
+.phase-timeline .phases { display: flex; gap: 0; align-items: flex-start; min-width: max-content; }
+.phase-item {
+  flex: 1; min-width: 140px; text-align: center; cursor: pointer;
+  position: relative; padding: 12px 16px 16px;
+  transition: all 0.2s;
+}
+.phase-item:not(:last-child)::after {
+  content: ''; position: absolute; top: 28px; right: -1px;
+  width: calc(100% - 32px); height: 3px; z-index: 0;
+  background: #E2E8F0;
+}
+.phase-item.done:not(:last-child)::after { background: var(--color-success) }
+.phase-item.partial:not(:last-child)::after { background: linear-gradient(90deg, var(--color-success) 50%, #E2E8F0 50%) }
+.phase-item.current { background: #EEF2FF; border-radius: var(--radius-lg) }
+.phase-dot {
+  width: 24px; height: 24px; border-radius: 50%; margin: 0 auto 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; position: relative; z-index: 1;
+  border: 3px solid #E2E8F0; background: #fff; color: #94A3B8;
+  transition: all 0.3s;
+}
+.phase-item.done .phase-dot { border-color: var(--color-success); background: var(--color-success); color: #fff }
+.phase-item.partial .phase-dot { border-color: var(--color-warning); background: var(--color-warning); color: #fff }
+.phase-item.current .phase-dot { border-color: var(--color-primary); background: var(--color-primary); color: #fff; animation: pulse-dot 2s infinite }
+@keyframes pulse-dot { 0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,0.4)} 50%{box-shadow:0 0 0 6px rgba(37,99,235,0)} }
+.phase-name { font-size: 13px; font-weight: 600; color: var(--color-text); margin-bottom: 2px }
+.phase-item.done .phase-name { color: var(--color-success) }
+.phase-item.current .phase-name { color: var(--color-primary) }
+.phase-desc { font-size: 10px; color: #94A3B8; line-height: 1.3 }
 
 /* ===================== Progress Bar ===================== */
 .progress-section {
@@ -471,7 +565,11 @@ body {
 
 <div class="header">
   <h1><span class="icon">⚡</span>${data.project}</h1>
-  <div class="subtitle">AI Platform · Sprint 开发进度仪表盘 · 最后更新: <span id="lastUpdated">—</span></div>
+  <div class="subtitle">BMAD 全生命周期仪表盘 · 最后更新: <span id="lastUpdated">—</span></div>
+</div>
+
+<div class="phase-timeline" id="phaseTimeline">
+  <div class="phases" id="phaseList"></div>
 </div>
 
 <div class="progress-section fade-in">
@@ -497,9 +595,37 @@ body {
 // DATA — 自动从 sprint-status.yaml + epics.md 生成
 // ========================================================================
 const DATA = ${dataJSON};
+const PHASES = ${phasesJSON};
 
 // ========================================================================
-// RENDER
+// RENDER — Phase Timeline
+// ========================================================================
+(function renderPhases() {
+  const list = document.getElementById('phaseList');
+  let html = '';
+  PHASES.forEach(function(p, i) {
+    let cls = '';
+    if (p.done) cls = 'done';
+    else if (p.partial) cls = 'partial';
+    else if (p.isCurrent) cls = 'current';
+    let icon = p.done ? '✓' : (p.partial ? '◐' : (p.isCurrent ? '▶' : (i + 1)));
+    html += '<div class="phase-item ' + cls + '" data-phase="' + p.id + '" onclick="scrollToPhase(\'' + p.id + '\')">' +
+      '<div class="phase-dot">' + icon + '</div>' +
+      '<div class="phase-name">' + p.icon + ' ' + p.name + '</div>' +
+      '<div class="phase-desc">' + p.desc + '</div>' +
+    '</div>';
+  });
+  list.innerHTML = html;
+})();
+
+function scrollToPhase(phaseId) {
+  if (phaseId === 'development') {
+    document.getElementById('epicGrid').scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+// ========================================================================
+// RENDER — Stats & Epics
 // ========================================================================
 document.getElementById('lastUpdated').textContent = DATA.lastUpdated;
 document.getElementById('generatedAt').textContent = '生成时间: ' + new Date().toLocaleString('zh-CN');
@@ -710,9 +836,26 @@ function main() {
   console.log(`       总计: ${totalS} Story, ${doneS} 完成, ${reviewS} 待审查`);
   console.log(`       Epic 状态: ${data.epics.map(e => `Epic${e.num}=${e.status}`).join(', ')}`);
 
+  // 3.5 检测 BMAD 各阶段
+  const phases = detectPhases(outputDir);
+  // 根据 sprint 数据更新开发阶段和回顾阶段状态
+  const devPhase = phases.find(p => p.id === 'development');
+  if (devPhase) {
+    if (doneS === totalS && totalS > 0) devPhase.done = true;
+    else if (doneS > 0) devPhase.partial = true;
+    devPhase.desc = `${doneS}/${totalS} Story 完成`;
+  }
+  const retroPhase = phases.find(p => p.id === 'retro');
+  if (retroPhase && devPhase && devPhase.done) {
+    // 检查是否有 retrospective 完成标记
+    if (statusData.status && Object.values(statusData.status).some(v => v === 'done' && Object.keys(statusData.status).some(k => k.includes('retrospective')))) {
+      retroPhase.done = true;
+    }
+  }
+
   // 4. 生成 HTML
   console.log('\n[4/4] 生成 HTML ...');
-  const generatedPath = generateHTML(data, outputPath);
+  const generatedPath = generateHTML(data, phases, outputPath);
   
   const fileSize = (fs.statSync(generatedPath).size / 1024).toFixed(1);
   console.log(`       生成完成: ${generatedPath} (${fileSize} KB)`);

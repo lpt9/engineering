@@ -318,12 +318,98 @@ function detectPhases(outputDir) {
 }
 
 // ────────────────────────────────────────────────────────────
+// 4.6 收集各阶段产出物文件（嵌入内容，方便点击查看）
+// ────────────────────────────────────────────────────────────
+
+function collectArtifacts(outputDir) {
+  const readFileHead = (filePath, maxLines) => {
+    try {
+      const c = fs.readFileSync(path.join(outputDir, filePath), 'utf-8');
+      return c.split(/\r?\n/).slice(0, maxLines || 300).join('\n');
+    } catch (e) { return null; }
+  };
+
+  const findMdFiles = (dirRel) => {
+    const d = path.join(outputDir, dirRel);
+    if (!fs.existsSync(d)) return [];
+    const results = [];
+    try {
+      fs.readdirSync(d, { withFileTypes: true }).forEach(entry => {
+        if (entry.isFile() && entry.name.endsWith('.md')) {
+          results.push({
+            name: entry.name,
+            relPath: dirRel + '/' + entry.name,
+          });
+        } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
+          results.push(...findMdFiles(dirRel + '/' + entry.name));
+        }
+      });
+    } catch (e) { /* skip */ }
+    return results;
+  };
+
+  const artifacts = {
+    analysis: [],
+    architecture: [],
+    planning: [],
+    testing: [],
+  };
+
+  // 需求分析：查找 prds/ 目录或 prd.md
+  const prdDir = 'planning-artifacts/prds';
+  if (fs.existsSync(path.join(outputDir, prdDir))) {
+    findMdFiles(prdDir).forEach(f => {
+      artifacts.analysis.push({ name: f.name, path: f.relPath, content: readFileHead(f.relPath, 250) });
+    });
+  }
+  // 也查找独立的 prd.md
+  ['planning-artifacts/prd.md'].forEach(fp => {
+    if (fs.existsSync(path.join(outputDir, fp))) {
+      artifacts.analysis.push({ name: 'prd.md', path: fp, content: readFileHead(fp, 250) });
+    }
+  });
+
+  // 架构设计
+  ['planning-artifacts/architecture.md'].forEach(fp => {
+    if (fs.existsSync(path.join(outputDir, fp))) {
+      artifacts.architecture.push({ name: 'architecture.md', path: fp, content: readFileHead(fp, 250) });
+    }
+  });
+  // UX design
+  const uxDir = 'planning-artifacts/ux-designs';
+  if (fs.existsSync(path.join(outputDir, uxDir))) {
+    findMdFiles(uxDir).forEach(f => {
+      artifacts.architecture.push({ name: f.name, path: f.relPath, content: readFileHead(f.relPath, 200) });
+    });
+  }
+
+  // 开发规划
+  ['planning-artifacts/epics.md'].forEach(fp => {
+    if (fs.existsSync(path.join(outputDir, fp))) {
+      artifacts.planning.push({ name: 'epics.md', path: fp, content: readFileHead(fp, 100) });
+    }
+  });
+
+  // 将 artifacts 序列化：content 过长则截断
+  Object.keys(artifacts).forEach(k => {
+    artifacts[k].forEach(a => {
+      if (a.content && a.content.length > 8000) {
+        a.content = a.content.substring(0, 8000) + '\n\n... (内容过长，已截断)';
+      }
+    });
+  });
+
+  return artifacts;
+}
+
+// ────────────────────────────────────────────────────────────
 // 5. 生成 HTML
 // ────────────────────────────────────────────────────────────
 
-function generateHTML(data, phases, outputPath) {
+function generateHTML(data, phases, artifacts, outputPath) {
   const dataJSON = JSON.stringify(data, null, 2);
   const phasesJSON = JSON.stringify(phases, null, 2);
+  const artifactsJSON = JSON.stringify(artifacts, null, 2);
 
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -645,6 +731,15 @@ body {
   <div style="font-size:13px" id="phaseEmptyDesc"></div>
 </div>
 
+<!-- 产出物内容展示区 -->
+<div id="artifactViewer" style="display:none;background:var(--color-surface);margin:16px 32px;border-radius:var(--radius-lg);box-shadow:var(--shadow-card);overflow:hidden">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:#F8FAFC;border-bottom:1px solid var(--color-border)">
+    <span style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary)" id="artifactFileName"></span>
+    <button onclick="closeArtifact()" style="border:none;background:none;cursor:pointer;font-size:18px;color:#94A3B8;padding:2px 6px">&times;</button>
+  </div>
+  <pre id="artifactContent" style="padding:16px 20px;margin:0;overflow:auto;max-height:500px;font-family:var(--font-mono);font-size:12px;line-height:1.6;color:var(--color-text);white-space:pre-wrap;word-break:break-all"></pre>
+</div>
+
 <div class="footer">
   <span class="mono">sprint-dashboard.html</span> · 数据源: sprint-status.yaml + epics.md · 自动生成 · <span id="generatedAt"></span>
 </div>
@@ -655,6 +750,7 @@ body {
 // ========================================================================
 const DATA = ${dataJSON};
 const PHASES = ${phasesJSON};
+const ARTIFACTS = ${artifactsJSON};
 
 // ========================================================================
 // RENDER — Phase Timeline
@@ -716,6 +812,18 @@ function scrollToPhase(phaseId) {
   document.getElementById('phaseInfo').style.display = 'none';
   document.getElementById('phaseEmpty').classList.remove('active');
 
+  // Show artifacts
+  document.getElementById('phaseInfoFiles').innerHTML = '';
+  var alist = ARTIFACTS[phaseId] || [];
+  if (alist.length > 0) {
+    var btnHTML = '<div style="margin-top:10px">📁 产出物: ';
+    alist.forEach(function(a, ai) {
+      btnHTML += '<button class="phase-detail-artifact found" style="cursor:pointer;border:none" onclick="showArtifact(\'' + phaseId + '\',' + ai + ')">📄 ' + a.name + '</button>';
+    });
+    btnHTML += '</div>';
+    document.getElementById('phaseInfoFiles').innerHTML = btnHTML;
+  }
+
   if (phaseId === 'development') {
     // Show development content (progress + stats + epics)
     document.getElementById('devContent').classList.add('active');
@@ -742,6 +850,20 @@ function scrollToPhase(phaseId) {
     document.getElementById('phaseEmptyDesc').textContent = '完成前置阶段后，此阶段将自动解锁';
     document.getElementById('phaseEmpty').classList.add('active');
   }
+}
+
+function showArtifact(phaseId, index) {
+  var alist = (ARTIFACTS[phaseId] || []);
+  var a = alist[index];
+  if (!a || !a.content) return;
+  document.getElementById('artifactFileName').textContent = '📄 ' + a.path;
+  document.getElementById('artifactContent').textContent = a.content;
+  document.getElementById('artifactViewer').style.display = 'block';
+  document.getElementById('artifactViewer').scrollIntoView({ behavior: 'smooth' });
+}
+
+function closeArtifact() {
+  document.getElementById('artifactViewer').style.display = 'none';
 }
 
 // ========================================================================
@@ -956,8 +1078,10 @@ function main() {
   console.log(`       总计: ${totalS} Story, ${doneS} 完成, ${reviewS} 待审查`);
   console.log(`       Epic 状态: ${data.epics.map(e => `Epic${e.num}=${e.status}`).join(', ')}`);
 
-  // 3.5 检测 BMAD 各阶段
+  // 3.5 检测 BMAD 各阶段 + 收集产出物
   const phases = detectPhases(outputDir);
+  const artifacts = collectArtifacts(outputDir);
+  console.log(`       产出物: ${Object.values(artifacts).reduce((sum, a) => sum + a.length, 0)} 个文件`);
   // 根据 sprint 数据更新各阶段状态
   const devPhase = phases.find(p => p.id === 'development');
   if (devPhase) {
@@ -985,7 +1109,7 @@ function main() {
 
   // 4. 生成 HTML
   console.log('\n[4/4] 生成 HTML ...');
-  const generatedPath = generateHTML(data, phases, outputPath);
+  const generatedPath = generateHTML(data, phases, artifacts, outputPath);
   
   const fileSize = (fs.statSync(generatedPath).size / 1024).toFixed(1);
   console.log(`       生成完成: ${generatedPath} (${fileSize} KB)`);

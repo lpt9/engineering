@@ -390,11 +390,14 @@ function collectArtifacts(outputDir) {
     }
   });
 
-  // 将 artifacts 序列化：content 过长则截断
+  // 序列化：content 转 base64 避免 JS 语法问题，过长截断
   Object.keys(artifacts).forEach(k => {
     artifacts[k].forEach(a => {
-      if (a.content && a.content.length > 8000) {
-        a.content = a.content.substring(0, 8000) + '\n\n... (内容过长，已截断)';
+      if (a.content) {
+        if (a.content.length > 8000) {
+          a.content = a.content.substring(0, 8000) + '\n\n... (内容过长，已截断)';
+        }
+        a.content = Buffer.from(a.content, 'utf-8').toString('base64');
       }
     });
   });
@@ -750,7 +753,7 @@ body {
 // ========================================================================
 const DATA = ${dataJSON};
 const PHASES = ${phasesJSON};
-const ARTIFACTS = ${artifactsJSON};
+const ARTIFACTS = __ARTIFACTS__;
 
 // ========================================================================
 // RENDER — Phase Timeline
@@ -818,7 +821,7 @@ function scrollToPhase(phaseId) {
   if (alist.length > 0) {
     var btnHTML = '<div style="margin-top:10px">📁 产出物: ';
     alist.forEach(function(a, ai) {
-      btnHTML += '<button class="phase-detail-artifact found" style="cursor:pointer;border:none" onclick="showArtifact(\'' + phaseId + '\',' + ai + ')">📄 ' + a.name + '</button>';
+      btnHTML += '<button class="phase-detail-artifact found" style="cursor:pointer;border:none" data-phase="' + phaseId + '" data-idx="' + ai + '" onclick="var b=this;showArtifact(b.dataset.phase,+b.dataset.idx)">📄 ' + a.name + '</button>';
     });
     btnHTML += '</div>';
     document.getElementById('phaseInfoFiles').innerHTML = btnHTML;
@@ -856,8 +859,11 @@ function showArtifact(phaseId, index) {
   var alist = (ARTIFACTS[phaseId] || []);
   var a = alist[index];
   if (!a || !a.content) return;
+  // base64 解码
+  var content = a.content;
+  try { content = atob(a.content); } catch(e) { /* 旧格式兼容 */ }
   document.getElementById('artifactFileName').textContent = '📄 ' + a.path;
-  document.getElementById('artifactContent').textContent = a.content;
+  document.getElementById('artifactContent').textContent = content;
   document.getElementById('artifactViewer').style.display = 'block';
   document.getElementById('artifactViewer').scrollIntoView({ behavior: 'smooth' });
 }
@@ -976,7 +982,10 @@ requestAnimationFrame(() => {
 </body>
 </html>`;
 
-  fs.writeFileSync(outputPath, html, 'utf-8');
+  // 替换占位符（避免模板字面量解析 ${} 破坏 JSON 内容）
+  const finalHtml = html.replace('__ARTIFACTS__', artifactsJSON);
+
+  fs.writeFileSync(outputPath, finalHtml, 'utf-8');
   return outputPath;
 }
 

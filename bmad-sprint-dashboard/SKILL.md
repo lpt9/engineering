@@ -105,6 +105,30 @@ node _bmad/scripts/generate_sprint_dashboard.js
 node scripts/generate_dashboard.js --output path/to/custom-dashboard.html
 ```
 
+### Watch 模式（自动刷新）
+
+启动后持续监听源文件变化，自动重新生成仪表盘。适合开发过程中需要频繁查看进度变化的场景：
+
+```bash
+# 通过项目部署的脚本
+node _bmad/scripts/generate_sprint_dashboard.js --watch
+
+# 或通过全局 Skill 脚本
+node ~/.codebuddy/skills/bmad-sprint-dashboard/scripts/generate_dashboard.js --watch
+```
+
+`--watch` 模式会监控 `sprint-status.yaml` 和 `epics.md`，一旦文件内容变化，自动重新生成 HTML。在浏览器中打开仪表盘后手动刷新页面即可看到最新内容。
+
+### 页面刷新说明
+
+> **重要：** `sprint-dashboard.html` 是静态 HTML 页面，数据在生成时嵌入。源数据更新后，需要：
+> 1. **重新运行生成脚本**（或用 `--watch` 自动完成）
+> 2. **在浏览器中刷新页面**（F5 或 Ctrl+R）
+>
+> **自动刷新功能：** 仪表盘页面右上角提供「自动刷新」开关按钮，开启后每 30 秒自动刷新页面。配合 `--watch` 模式使用，可实现全自动闭环：源数据变化 → 脚本重新生成 HTML → 浏览器自动刷新显示最新数据。开关状态通过 localStorage 持久化存储，刷新页面后保持开启。
+>
+> 仪表盘页面会自动检测数据是否过时：页面底部会显示数据源的修改时间，如果源文件在页面生成之后被修改过，页面顶部会显示黄色警告条。
+
 ## 生成后步骤
 
 1. 脚本输出文件默认位置：`{项目目录}/_bmad-output/implementation-artifacts/sprint-dashboard.html`
@@ -116,6 +140,9 @@ node scripts/generate_dashboard.js --output path/to/custom-dashboard.html
    - 各阶段产出物点击查看
    - 各 Epic 展开/折叠卡片，显示所有 Story 状态
    - 当前活跃 Epic 高亮显示
+   - **数据新鲜度检测**：页面底部显示源数据文件的最后修改时间，如果源数据在页面生成后变化，自动显示警告
+   - **自动刷新开关**：页面右上角可开启每 30 秒自动刷新，支持 localStorage 持久化状态
+   - **手动刷新按钮**：页面右上角提供「刷新」按钮，点击即可重新加载获取最新数据，无需按 F5
    - 响应式设计，支持移动端查看
 
 ## 数据源说明

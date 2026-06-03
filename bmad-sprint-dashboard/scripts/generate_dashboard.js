@@ -409,10 +409,11 @@ function collectArtifacts(outputDir) {
 // 5. 生成 HTML
 // ────────────────────────────────────────────────────────────
 
-function generateHTML(data, phases, artifacts, outputPath) {
+function generateHTML(data, phases, artifacts, outputPath, sourceMeta) {
   const dataJSON = JSON.stringify(data, null, 2);
   const phasesJSON = JSON.stringify(phases, null, 2);
   const artifactsJSON = JSON.stringify(artifacts, null, 2);
+  const sourceMetaJSON = JSON.stringify(sourceMeta, null, 2);
 
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -473,6 +474,39 @@ body {
 }
 .header h1 .icon { font-size: 24px }
 .header .subtitle { color: #94A3B8; font-size: 13px; }
+
+/* ===================== Auto-Refresh Controls ===================== */
+.header-top-row { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px }
+.auto-refresh-row { display: flex; align-items: center; gap: 10px; flex-shrink: 0 }
+.auto-refresh-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+  color: #94A3B8; font-size: 12px; padding: 5px 12px;
+  border-radius: 9999px; cursor: pointer; transition: all 0.25s;
+  user-select: none; white-space: nowrap;
+}
+.auto-refresh-btn:hover { background: rgba(255,255,255,0.15); color: #CBD5E1 }
+.auto-refresh-btn.active {
+  background: rgba(16,185,129,0.22); border-color: rgba(16,185,129,0.45); color: #6EE7B7;
+}
+.auto-refresh-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #64748B;
+  transition: background 0.3s;
+}
+.auto-refresh-btn.active .auto-refresh-dot { background: #10B981; animation: pulse-dot 2s infinite }
+.auto-refresh-countdown { font-size: 11px; color: #64748B; font-variant-numeric: tabular-nums; min-width: 28px }
+.auto-refresh-btn.active ~ .auto-refresh-countdown { color: #6EE7B7 }
+.refresh-now-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+  color: #CBD5E1; font-size: 12px; padding: 5px 12px;
+  border-radius: 9999px; cursor: pointer; transition: all 0.2s;
+  user-select: none; white-space: nowrap;
+}
+.refresh-now-btn:hover { background: rgba(255,255,255,0.22); color: #F1F5F9 }
+.refresh-now-btn:active { transform: scale(0.95) }
+.refresh-now-btn .refresh-icon { display: inline-block; font-size: 13px; transition: transform 0.3s }
+.refresh-now-btn:hover .refresh-icon { transform: rotate(90deg) }
 
 /* ===================== Phase Timeline ===================== */
 .phase-timeline {
@@ -695,8 +729,21 @@ body {
 <body>
 
 <div class="header">
-  <h1><span class="icon">⚡</span>${data.project}</h1>
-  <div class="subtitle">BMAD 全生命周期仪表盘 · 最后更新: <span id="lastUpdated">—</span></div>
+  <div class="header-top-row">
+    <div>
+      <h1><span class="icon">⚡</span>${data.project}</h1>
+      <div class="subtitle">BMAD 全生命周期仪表盘 · 最后更新: <span id="lastUpdated">—</span></div>
+    </div>
+    <div class="auto-refresh-row">
+      <button class="refresh-now-btn" onclick="location.reload()" title="立即刷新页面获取最新数据">
+        <span class="refresh-icon">↻</span> 刷新
+      </button>
+      <button class="auto-refresh-btn" id="autoRefreshBtn" onclick="toggleAutoRefresh()" title="开启后每 30 秒自动刷新页面">
+        <span class="auto-refresh-dot"></span> 自动刷新
+      </button>
+      <span class="auto-refresh-countdown" id="autoRefreshCD"></span>
+    </div>
+  </div>
 </div>
 
 <div class="phase-timeline" id="phaseTimeline">
@@ -747,6 +794,12 @@ body {
   <span class="mono">sprint-dashboard.html</span> · 数据源: sprint-status.yaml + epics.md · 自动生成 · <span id="generatedAt"></span>
 </div>
 
+<!-- 数据陈旧提示条 -->
+<div id="staleWarning" style="display:none;background:#FEF3C7;border-bottom:2px solid #F59E0B;text-align:center;padding:8px 16px;font-size:12px;color:#92400E">
+  ⚠️ 源数据文件在页面生成后被修改过，当前显示可能不是最新。<br>
+  请重新运行 <code style="background:#FDE68A;padding:1px 5px;border-radius:3px">node _bmad/scripts/generate_sprint_dashboard.js</code> 然后刷新页面。
+</div>
+
 <script>
 // ========================================================================
 // DATA — 自动从 sprint-status.yaml + epics.md 生成
@@ -754,6 +807,7 @@ body {
 const DATA = ${dataJSON};
 const PHASES = ${phasesJSON};
 const ARTIFACTS = __ARTIFACTS__;
+const SOURCE_META = ${sourceMetaJSON};
 
 // ========================================================================
 // RENDER — Phase Timeline
@@ -876,7 +930,32 @@ function closeArtifact() {
 // RENDER — Stats & Epics
 // ========================================================================
 document.getElementById('lastUpdated').textContent = DATA.lastUpdated;
-document.getElementById('generatedAt').textContent = '生成时间: ' + new Date().toLocaleString('zh-CN');
+document.getElementById('generatedAt').textContent = '生成时间: ' + (SOURCE_META.generatedAt || new Date().toLocaleString('zh-CN'));
+
+// ── 数据新鲜度检测 ──────────────────────────
+(function checkFreshness() {
+  if (!SOURCE_META) return;
+  var genTime = SOURCE_META.generatedAt ? new Date(SOURCE_META.generatedAt).getTime() : Date.now();
+  var statusTime = SOURCE_META.statusYamlMtime ? new Date(SOURCE_META.statusYamlMtime).getTime() : 0;
+  var epicsTime = SOURCE_META.epicsMdMtime ? new Date(SOURCE_META.epicsMdMtime).getTime() : 0;
+  // 如果源文件修改时间大于页面生成时间，说明数据可能已过时
+  if (statusTime > genTime || epicsTime > genTime) {
+    var warn = document.getElementById('staleWarning');
+    if (warn) warn.style.display = 'block';
+    // 在 header subtitle 也追加提醒
+    var subtitle = document.querySelector('.header .subtitle');
+    if (subtitle) {
+      subtitle.innerHTML += ' <span style="color:#F59E0B;font-weight:600">[数据可能已过时]</span>';
+    }
+  }
+  // 在 footer 显示数据源时间
+  var ft = document.querySelector('.footer');
+  if (ft && SOURCE_META.statusYamlMtime) {
+    var statusDt = new Date(SOURCE_META.statusYamlMtime).toLocaleString('zh-CN');
+    var epicsDt = SOURCE_META.epicsMdMtime ? new Date(SOURCE_META.epicsMdMtime).toLocaleString('zh-CN') : 'N/A';
+    ft.innerHTML += '<br><span style="font-size:10px">数据时间: sprint-status.yaml → ' + statusDt + ' | epics.md → ' + epicsDt + '</span>';
+  }
+})();
 
 function statusLabel(s) {
   const map = { done:'DONE', review:'REVIEW', 'in-progress':'DOING', 'ready-for-dev':'READY', backlog:'TODO' };
@@ -977,6 +1056,69 @@ requestAnimationFrame(() => {
     setTimeout(() => el.classList.add('visible'), i * 60);
   });
 });
+
+// ========================================================================
+// AUTO-REFRESH — 定时自动刷新页面
+// ========================================================================
+(function autoRefreshInit() {
+  const STORAGE_KEY = 'sprint-dashboard-autorefresh';
+  const REFRESH_INTERVAL = 30000; // 30 秒
+  let timerId = null;
+  let countdownId = null;
+  let nextRefreshTime = 0;
+
+  const btn = document.getElementById('autoRefreshBtn');
+  const cdEl = document.getElementById('autoRefreshCD');
+
+  function updateUI(active) {
+    if (active) {
+      btn.classList.add('active');
+      btn.querySelector('.auto-refresh-dot').textContent = '';
+    } else {
+      btn.classList.remove('active');
+    }
+  }
+
+  function updateCountdown() {
+    if (!nextRefreshTime) { cdEl.textContent = ''; return; }
+    const remaining = Math.max(0, Math.ceil((nextRefreshTime - Date.now()) / 1000));
+    cdEl.textContent = remaining + 's';
+  }
+
+  function startAutoRefresh() {
+    stopAutoRefresh(true); // 清除旧的 timer
+    nextRefreshTime = Date.now() + REFRESH_INTERVAL;
+    updateCountdown();
+    countdownId = setInterval(updateCountdown, 1000);
+    timerId = setTimeout(() => {
+      location.reload();
+    }, REFRESH_INTERVAL);
+    localStorage.setItem(STORAGE_KEY, '1');
+    updateUI(true);
+  }
+
+  function stopAutoRefresh(keepStorage) {
+    if (timerId) { clearTimeout(timerId); timerId = null; }
+    if (countdownId) { clearInterval(countdownId); countdownId = null; }
+    nextRefreshTime = 0;
+    cdEl.textContent = '';
+    if (!keepStorage) localStorage.removeItem(STORAGE_KEY);
+    updateUI(false);
+  }
+
+  window.toggleAutoRefresh = function() {
+    if (timerId) {
+      stopAutoRefresh(false);
+    } else {
+      startAutoRefresh();
+    }
+  };
+
+  // 页面加载时恢复状态
+  if (localStorage.getItem(STORAGE_KEY) === '1') {
+    startAutoRefresh();
+  }
+})();
 </script>
 
 </body>
@@ -997,11 +1139,14 @@ function main() {
   // 解析命令行参数
   const args = process.argv.slice(2);
   let outputPath = null;
+  let isWatch = false;
   
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--output' || args[i] === '-o') {
       outputPath = args[i + 1];
       i++;
+    } else if (args[i] === '--watch' || args[i] === '-w') {
+      isWatch = true;
     }
   }
 
@@ -1023,109 +1168,180 @@ function main() {
   console.log(`  状态文件:   ${sprintStatusPath}`);
   console.log(`  Epic 文件:  ${epicsPath}`);
   console.log(`  输出文件:   ${outputPath}`);
+  if (isWatch) {
+    console.log(`  监听模式:   已启用 (文件变化时自动重新生成)`);
+  }
   console.log('───────────────────────────────────────────');
 
-  // 1. 解析 sprint-status.yaml
-  console.log('\n[1/4] 解析 sprint-status.yaml ...');
-  const statusData = parseSprintStatus(sprintStatusPath);
-  if (!statusData) {
-    console.log(`       ${'⚠ '.trim()} sprint-status.yaml 不存在`);
-    console.log('');
-    console.log('  ╔═══════════════════════════════════════════════════════════╗');
-    console.log('  ║  📋 仪表盘数据尚未就绪                                   ║');
-    console.log('  ║                                                         ║');
-    console.log('  ║  BMAD-METHOD 已安装，但还没有 Sprint 数据。              ║');
-    console.log('  ║  请先完成以下 BMAD 工作流来生成数据:                     ║');
-    console.log('  ║                                                         ║');
-    console.log('  ║  1. 创建 PRD           → bmad-create-prd                 ║');
-    console.log('  ║  2. 创建架构            → bmad-create-architecture         ║');
-    console.log('  ║  3. 创建 Epics & Stories → bmad-create-epics-and-stories  ║');
-    console.log('  ║  4. Sprint 规划         → bmad-sprint-planning           ║');
-    console.log('  ║                                                         ║');
-    console.log('  ║  完成后重新运行: node _bmad/scripts/generate_sprint_dashboard.js');
-    console.log('  ╚═══════════════════════════════════════════════════════════╝');
-    console.log('');
-    process.exit(0);
-  }
-  console.log(`       找到 ${Object.keys(statusData.status).length} 个状态条目`);
-  console.log(`       最后更新: ${statusData.meta.last_updated}`);
+  // 封装生成逻辑为函数，方便 watch 模式复用
+  function doGenerate() {
+    const now = new Date().toISOString();
 
-  // 2. 解析 epics.md
-  console.log('\n[2/4] 解析 epics.md ...');
-  const epics = parseEpics(epicsPath);
-  if (epics.length === 0) {
-    console.log(`       ${'⚠'.trim()} epics.md 不存在或无 Epic 数据`);
-    console.log('');
-    console.log('  ╔═══════════════════════════════════════════════════════════╗');
-    console.log('  ║  📋 Epic 数据尚未就绪                                   ║');
-    console.log('  ║                                                         ║');
-    console.log('  ║  请先运行: bmad-create-epics-and-stories                 ║');
-    console.log('  ║  然后运行: bmad-sprint-planning                         ║');
-    console.log('  ║                                                         ║');
-    console.log('  ║  完成后重新运行: node _bmad/scripts/generate_sprint_dashboard.js');
-    console.log('  ╚═══════════════════════════════════════════════════════════╝');
-    console.log('');
-    process.exit(0);
-  }
-  epics.forEach(e => {
-    console.log(`       Epic ${e.num}: ${e.name} (${e.stories.length} 个 Story)`);
-  });
+    // 记录源文件的修改时间（用于嵌入 HTML 做数据新鲜度检测）
+    const sourceMeta = {
+      generatedAt: now,
+      statusYamlMtime: null,
+      epicsMdMtime: null,
+    };
+    try {
+      if (fs.existsSync(sprintStatusPath)) {
+        sourceMeta.statusYamlMtime = fs.statSync(sprintStatusPath).mtime.toISOString();
+      }
+      if (fs.existsSync(epicsPath)) {
+        sourceMeta.epicsMdMtime = fs.statSync(epicsPath).mtime.toISOString();
+      }
+    } catch (e) { /* ignore */ }
 
-  // 3. 合并数据
-  console.log('\n[3/4] 合并数据 ...');
-  const data = mergeData(epics, statusData);
-  
-  // 统计
-  let totalS = 0, doneS = 0, reviewS = 0;
-  data.epics.forEach(e => {
-    e.stories.forEach(s => {
-      totalS++;
-      if (s.status === 'done') doneS++;
-      if (s.status === 'review') reviewS++;
-    });
-  });
-  console.log(`       总计: ${totalS} Story, ${doneS} 完成, ${reviewS} 待审查`);
-  console.log(`       Epic 状态: ${data.epics.map(e => `Epic${e.num}=${e.status}`).join(', ')}`);
-
-  // 3.5 检测 BMAD 各阶段 + 收集产出物
-  const phases = detectPhases(outputDir);
-  const artifacts = collectArtifacts(outputDir);
-  console.log(`       产出物: ${Object.values(artifacts).reduce((sum, a) => sum + a.length, 0)} 个文件`);
-  // 根据 sprint 数据更新各阶段状态
-  const devPhase = phases.find(p => p.id === 'development');
-  if (devPhase) {
-    if (doneS === totalS && totalS > 0) devPhase.done = true;
-    else if (doneS > 0) devPhase.partial = true;
-    devPhase.desc = `${doneS}/${totalS} 完成`;
-    devPhase.detail = `${doneS} 个 Story 已完成，${reviewS} 个待审查`;
-  }
-  // 测试验收阶段：有 story 处于 review 或部分 done
-  const testPhase = phases.find(p => p.id === 'testing');
-  if (testPhase) {
-    if (reviewS > 0) {
-      testPhase.partial = true;
-      testPhase.desc = `${reviewS} 个待审`;
-      testPhase.detail = `${reviewS} 个 Story 等待 Code Review，${doneS} 个已通过`;
+    // 1. 解析 sprint-status.yaml
+    console.log('\n[1/4] 解析 sprint-status.yaml ...');
+    const statusData = parseSprintStatus(sprintStatusPath);
+    if (!statusData) {
+      console.log(`       ${'⚠ '.trim()} sprint-status.yaml 不存在`);
+      console.log('');
+      console.log('  ╔═══════════════════════════════════════════════════════════╗');
+      console.log('  ║  📋 仪表盘数据尚未就绪                                   ║');
+      console.log('  ║                                                         ║');
+      console.log('  ║  BMAD-METHOD 已安装，但还没有 Sprint 数据。              ║');
+      console.log('  ║  请先完成以下 BMAD 工作流来生成数据:                     ║');
+      console.log('  ║                                                         ║');
+      console.log('  ║  1. 创建 PRD           → bmad-create-prd                 ║');
+      console.log('  ║  2. 创建架构            → bmad-create-architecture         ║');
+      console.log('  ║  3. 创建 Epics & Stories → bmad-create-epics-and-stories  ║');
+      console.log('  ║  4. Sprint 规划         → bmad-sprint-planning           ║');
+      console.log('  ║                                                         ║');
+      console.log('  ║  完成后重新运行: node _bmad/scripts/generate_sprint_dashboard.js');
+      console.log('  ╚═══════════════════════════════════════════════════════════╝');
+      console.log('');
+      return false;
     }
-    if (doneS > 0 && reviewS === 0 && totalS === doneS) testPhase.isCurrent = true;
-    if (doneS === totalS && totalS > 0) { testPhase.done = true; testPhase.desc = '全部通过'; }
-  }
-  // 回顾总结
-  const retroPhase = phases.find(p => p.id === 'retro');
-  if (retroPhase && doneS === totalS && totalS > 0) {
-    retroPhase.isCurrent = true;
+    console.log(`       找到 ${Object.keys(statusData.status).length} 个状态条目`);
+    console.log(`       最后更新: ${statusData.meta.last_updated}`);
+
+    // 2. 解析 epics.md
+    console.log('\n[2/4] 解析 epics.md ...');
+    const epics = parseEpics(epicsPath);
+    if (epics.length === 0) {
+      console.log(`       ${'⚠'.trim()} epics.md 不存在或无 Epic 数据`);
+      console.log('');
+      console.log('  ╔═══════════════════════════════════════════════════════════╗');
+      console.log('  ║  📋 Epic 数据尚未就绪                                   ║');
+      console.log('  ║                                                         ║');
+      console.log('  ║  请先运行: bmad-create-epics-and-stories                 ║');
+      console.log('  ║  然后运行: bmad-sprint-planning                         ║');
+      console.log('  ║                                                         ║');
+      console.log('  ║  完成后重新运行: node _bmad/scripts/generate_sprint_dashboard.js');
+      console.log('  ╚═══════════════════════════════════════════════════════════╝');
+      console.log('');
+      return false;
+    }
+    epics.forEach(e => {
+      console.log(`       Epic ${e.num}: ${e.name} (${e.stories.length} 个 Story)`);
+    });
+
+    // 3. 合并数据
+    console.log('\n[3/4] 合并数据 ...');
+    const data = mergeData(epics, statusData);
+    
+    // 统计
+    let totalS = 0, doneS = 0, reviewS = 0;
+    data.epics.forEach(e => {
+      e.stories.forEach(s => {
+        totalS++;
+        if (s.status === 'done') doneS++;
+        if (s.status === 'review') reviewS++;
+      });
+    });
+    console.log(`       总计: ${totalS} Story, ${doneS} 完成, ${reviewS} 待审查`);
+    console.log(`       Epic 状态: ${data.epics.map(e => `Epic${e.num}=${e.status}`).join(', ')}`);
+
+    // 3.5 检测 BMAD 各阶段 + 收集产出物
+    const phases = detectPhases(outputDir);
+    const artifacts = collectArtifacts(outputDir);
+    console.log(`       产出物: ${Object.values(artifacts).reduce((sum, a) => sum + a.length, 0)} 个文件`);
+    // 根据 sprint 数据更新各阶段状态
+    const devPhase = phases.find(p => p.id === 'development');
+    if (devPhase) {
+      if (doneS === totalS && totalS > 0) devPhase.done = true;
+      else if (doneS > 0) devPhase.partial = true;
+      devPhase.desc = `${doneS}/${totalS} 完成`;
+      devPhase.detail = `${doneS} 个 Story 已完成，${reviewS} 个待审查`;
+    }
+    // 测试验收阶段：有 story 处于 review 或部分 done
+    const testPhase = phases.find(p => p.id === 'testing');
+    if (testPhase) {
+      if (reviewS > 0) {
+        testPhase.partial = true;
+        testPhase.desc = `${reviewS} 个待审`;
+        testPhase.detail = `${reviewS} 个 Story 等待 Code Review，${doneS} 个已通过`;
+      }
+      if (doneS > 0 && reviewS === 0 && totalS === doneS) testPhase.isCurrent = true;
+      if (doneS === totalS && totalS > 0) { testPhase.done = true; testPhase.desc = '全部通过'; }
+    }
+    // 回顾总结
+    const retroPhase = phases.find(p => p.id === 'retro');
+    if (retroPhase && doneS === totalS && totalS > 0) {
+      retroPhase.isCurrent = true;
+    }
+
+    // 4. 生成 HTML
+    console.log('\n[4/4] 生成 HTML ...');
+    const generatedPath = generateHTML(data, phases, artifacts, outputPath, sourceMeta);
+    
+    const fileSize = (fs.statSync(generatedPath).size / 1024).toFixed(1);
+    console.log(`       生成完成: ${generatedPath} (${fileSize} KB)`);
+    console.log('\n═══════════════════════════════════════════');
+    console.log('  ✅ Dashboard 生成成功!');
+    console.log(`  打开: file://${generatedPath.replace(/\\/g, '/')}`);
+    console.log('═══════════════════════════════════════════\n');
+    return true;
   }
 
-  // 4. 生成 HTML
-  console.log('\n[4/4] 生成 HTML ...');
-  const generatedPath = generateHTML(data, phases, artifacts, outputPath);
-  
-  const fileSize = (fs.statSync(generatedPath).size / 1024).toFixed(1);
-  console.log(`       生成完成: ${generatedPath} (${fileSize} KB)`);
-  console.log('\n═══════════════════════════════════════════');
-  console.log('  ✅ Dashboard 生成成功!');
-  console.log(`  打开: file://${generatedPath.replace(/\\/g, '/')}`);
-  console.log('═══════════════════════════════════════════\n');
+  // ── 执行生成 ────────────────────────────────
+  const ok = doGenerate();
+  if (!ok && !isWatch) {
+    process.exit(0);
+  }
+
+  // ── Watch 模式 ──────────────────────────────
+  if (isWatch) {
+    console.log('👁  正在监听源文件变化 (Ctrl+C 停止)...\n');
+
+    let debounceTimer = null;
+    const watchDirs = new Set();
+
+    function watchFile(filePath) {
+      if (!fs.existsSync(filePath)) return;
+      const dir = path.dirname(filePath);
+      if (!watchDirs.has(dir)) {
+        watchDirs.add(dir);
+        try {
+          fs.watch(dir, { persistent: true }, (eventType, filename) => {
+            const fullPath = path.join(dir, filename || '');
+            if (
+              fullPath === sprintStatusPath ||
+              fullPath === epicsPath ||
+              (filename && (filename === 'sprint-status.yaml' || filename === 'epics.md'))
+            ) {
+              // 防抖：500ms 内的多次变化合并为一次重新生成
+              if (debounceTimer) clearTimeout(debounceTimer);
+              debounceTimer = setTimeout(() => {
+                console.log(`\n${'─'.repeat(50)}`);
+                console.log(`🔄 ${new Date().toLocaleTimeString('zh-CN')} 检测到源文件变化，重新生成仪表盘...`);
+                console.log(`${'─'.repeat(50)}`);
+                doGenerate();
+                console.log('👁  继续监听中...\n');
+              }, 500);
+            }
+          });
+        } catch (e) {
+          // 某些平台/文件系统不支持递归监听，尝试监听单个文件
+        }
+      }
+    }
+
+    watchFile(sprintStatusPath);
+    watchFile(epicsPath);
+  }
 }
 
 main();
